@@ -1,0 +1,62 @@
+# Builds an unsigned Pulse.ipa from mobile/ for sideloading (Sideloadly or AltStore sign it with your Apple ID).
+# Run it from the Actions tab: "Build iOS IPA" > Run workflow. Download Pulse-ipa from the finished run.
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: mobile/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync Capacitor iOS project
+        run: pnpm exec cap sync ios
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry Pulse.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-ipa
+          path: mobile/Pulse.ipa
+          if-no-files-found: error
